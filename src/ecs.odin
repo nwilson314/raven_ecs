@@ -8,9 +8,14 @@ MAX_ENTITIES :: 100_000
 World :: struct {
     free_list: [dynamic]u64,
     next: u64,
+    pools: map[typeid]^BaseComponentPool,
 }
 
 destroy_world :: proc(world: ^World) {
+    for _, pool in world.pools {
+        pool.destroyer(pool)
+    }
+    delete(world.pools)
     delete(world.free_list)
 }
 
@@ -31,6 +36,7 @@ destroy_entity :: proc(world: ^World, entity: EntityID) {
 BaseComponentPool :: struct {
     owners: [dynamic]EntityID,
     sparse: [dynamic]i64,
+    destroyer: proc(cp: ^BaseComponentPool),
 }
 
 ComponentPool :: struct($T: typeid) {
@@ -38,28 +44,50 @@ ComponentPool :: struct($T: typeid) {
     dense:      [dynamic]T,
 }
 
-create_component_pool :: proc($T: typeid) -> ComponentPool(T) {
+create_component_pool :: proc(world: ^World, $T: typeid) -> ^ComponentPool(T) {
     sparse := make([dynamic]i64, MAX_ENTITIES)
     for i in 0..<MAX_ENTITIES {
         sparse[i] = -1
     }
-    return ComponentPool(T){
-        base = BaseComponentPool{
-            owners = {},
-            sparse = sparse,
-        },
-        dense = {},
+
+    destroyer := proc(cp: ^BaseComponentPool) {
+        pool := cast(^ComponentPool(T))cp
+        delete(pool.dense)
+        delete(pool.base.owners)
+        delete(pool.base.sparse)
+        free(pool)
     }
+    component_pool := new(ComponentPool(T))
+    component_pool.base = BaseComponentPool{
+        owners = {},
+        sparse = sparse,
+        destroyer = destroyer,
+    }
+
+    register_component_pool(world, component_pool)
+
+    return component_pool
 }
 
-add :: proc(cp: ^ComponentPool($T), world: ^World, entity: EntityID, component: T) {
+register_component_pool :: proc(world: ^World, cp: ^ComponentPool($T)) {
+    world.pools[T] = &cp.base
+}
+
+add :: proc(world: ^World, entity: EntityID, component: $T) {
+    base_pool_ptr := world.pools[T]
+    cp := cast(^ComponentPool(T))base_pool_ptr
     idx := len(cp.dense)
     append(&cp.dense, component)
     append(&cp.base.owners, entity)
     cp.base.sparse[i64(entity)] = i64(idx)
 }
 
-has :: proc(cp: ^ComponentPool($T), entity: EntityID) -> bool {
+has :: proc(world: ^World, entity: EntityID, $T: typeid) -> bool {
+    base_pool_ptr, ok := world.pools[T]
+    if !ok {
+        return false
+    }
+    cp := cast(^ComponentPool(T))base_pool_ptr
     idx: i64 = -1
     if i64(entity) < i64(len(cp.base.sparse)) {
         idx = cp.base.sparse[i64(entity)]
@@ -67,12 +95,16 @@ has :: proc(cp: ^ComponentPool($T), entity: EntityID) -> bool {
     return idx >= 0
 }
 
-get :: proc(cp: ^ComponentPool($T), entity: EntityID) -> ^T {
+get :: proc(world: ^World, entity: EntityID, $T: typeid) -> ^T {
+    base_pool_ptr := world.pools[T]
+    cp := cast(^ComponentPool(T))base_pool_ptr
     idx := cp.base.sparse[i64(entity)]
     return &cp.dense[idx]
 }
 
-remove :: proc(cp: ^ComponentPool($T), entity: EntityID) {
+remove :: proc(world: ^World, entity: EntityID, $T: typeid) {
+    base_pool_ptr := world.pools[T]
+    cp := cast(^ComponentPool(T))base_pool_ptr
     idx := cp.base.sparse[i64(entity)]
     last_idx := len(cp.dense) - 1
 

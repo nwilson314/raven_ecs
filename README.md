@@ -6,6 +6,39 @@ A simple ECS implementation in Odin.
 A minimal-yet-extensible **Entity–Component–System** framework written in the **Odin programming language**.  
 The design is data-oriented and cache-friendly by default, but small enough to drop into any solo-dev game project and grow over time.
 
+## Installation
+
+The recommended way to use Raven ECS in your own project is by adding it as a git submodule.
+
+From the root of your project's repository, run the following command:
+
+```bash
+git submodule add https://github.com/nwilson314/raven_ecs.git vendor/raven_ecs
+```
+
+Then, when you compile your project, you need to tell the Odin compiler where to find the `raven` collection:
+
+```bash
+odin build . -collection:raven=vendor/raven_ecs
+```
+
+Finally, you can import and use the library in your code:
+
+```odin
+import ecs "raven:ecs"
+
+// ...
+world := ecs.World{}
+```
+
+### Updating the Submodule
+
+To pull the latest changes from the Raven ECS repository into your project, navigate to your project's root directory and run the following command:
+
+```bash
+git submodule update --remote vendor/raven_ecs
+```
+
 ## Performance
 
 The query iterator has been optimized to achieve an average update time of **~0.16ms** for 100,000 entities on an Apple M1 Pro.
@@ -52,21 +85,35 @@ odin test tests/ -vet -o:speed
 
 ---
 
-## ✅ Sprint 3 – Sparse-set optimisation
+## ✅ Sprint 3 – Sparse-set Optimisation (Complete)
 
-### 1. Benchmarking & Analysis (Complete)
-*   **Dedicated Benchmark:** A benchmark test (`tests/benchmark.odin`) was created to measure performance for 100k entities with two components.
-*   **Baseline Performance:** The initial implementation clocks in at **~2.1 ms** per frame, failing our ≤ 1 ms target.
-*   **Bottleneck Identified:** Through careful measurement, we've confirmed the primary bottleneck is not the logic within the `next()` iterator itself, but the sheer **volume of calls** to it. The current algorithm iterates over the smallest component pool and performs a `base_has` check for every entity, leading to significant overhead from function calls and cache misses when scaled to 100k entities.
+*   **Goal:** Achieve ≤ 1 ms update time for 100,000 entities.
+*   **Benchmark Created:** A dedicated benchmark (`tests/benchmark.odin`) was created to rigorously test query performance.
+*   **Bottleneck Identified:** Initial tests showed performance at ~2.1ms. Analysis revealed the bottleneck was not algorithmic complexity, but CPU cache misses caused by random memory access in the `base_has` check during iteration.
+*   **Solution Found:** After exploring several manual optimization strategies, the solution was discovered to be enabling the Odin compiler's built-in optimizations. Compiling with the `-o:speed` flag reduced the average update time to **~0.2ms**, far exceeding the original goal.
+*   **Key Takeaway:** The Odin compiler is highly effective at optimizing memory access patterns. For performance-critical code, always benchmark with release optimizations (`-o:speed`) enabled.
 
-### 2. Next Steps: Algorithmic Optimisation
-The path to sub-millisecond frame times requires a fundamental change to the query algorithm.
-*   **Goal:** Reduce the number of iterations required to find matching entities.
+---
+
+### Sprint 3.5: World-Centric API (Complete)
+
+*   **Goal:** Refactor the ECS to improve its ergonomics and safety, without changing the underlying sparse-set performance. The `World` will become the central owner of all component data.
+*   **Result:** Refactored the core API so the `World` now owns and manages all component pools. Component pools are created on the heap and registered with the world automatically. `destroy_world` handles all cleanup. All ECS procedures (`add`, `get`, `has`, `remove`) now operate through the `world` pointer, improving ergonomics and safety.
+
+---
+
+## Current Goal: Sprint 4 - Archetype-Based Storage
+
+With the world-centric API complete, the next major goal is to transition from a component-centric storage model (SoA) to an archetype-based model. This involves grouping entities with the same component composition into contiguous memory chunks, which will dramatically improve query performance and memory locality.
+
+### Sprint 4: Archetype Chunk System (Next)
+
+*   **Goal:** Evolve the ECS architecture from sparse sets to an archetype-based model to achieve maximum iteration performance and lay the foundation for a real game demo.
 *   **Strategy:**
-    1.  Modify the `add` and `remove` procedures to maintain **sorted** entity ID lists within each component pool.
-    2.  Rewrite the `next` iterator to use a cache-friendly, single-pass "merge" or "zip" algorithm over these sorted lists. This will find the intersection of entities far more efficiently.
-
-_Once these tasks are green, tag the repository `v0.3-sprint3` and roll into Sprint 4._
+    1.  **Archetype Core:** Design and implement an `Archetype` struct that represents a unique combination of component types. The `World` will manage a collection of these archetypes.
+    2.  **Chunk-Based Storage:** Instead of individual component pools, memory will be organized into large, contiguous `Chunks` of data. Each chunk will belong to a single archetype and store all the component data for the entities within it.
+    3.  **Refactor API:** Update the `add`, `remove`, and `query` procedures to work with the new archetype system. Adding or removing a component will now involve moving an entity's data from one archetype to another.
+    4.  **Tank Demo:** Build a simple "tank arena" demo to showcase the new architecture and its ability to handle live entity creation and destruction in a game context.
 
 ### Goal
 

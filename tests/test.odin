@@ -37,32 +37,31 @@ test_entity_lifecycle :: proc(t: ^testing.T) {
 @(test)
 test_component_lifecycle :: proc(t: ^testing.T) {
     world: ecs.World
-    position_pool := ecs.create_component_pool(Position)
+    ecs.create_component_pool(&world, Position)
 
     // 1. Create entities
     entity1 := ecs.make_entity(&world)
     entity2 := ecs.make_entity(&world)
 
     // 2. Add components
-    ecs.add(&position_pool, &world, entity1, Position{10, 20})
-    ecs.add(&position_pool, &world, entity2, Position{30, 40})
+    ecs.add(&world, entity1, Position{10, 20})
+    ecs.add(&world, entity2, Position{30, 40})
 
-    testing.expect(t, ecs.has(&position_pool, entity1), "Entity1 should have a Position component")
-    testing.expect(t, ecs.has(&position_pool, entity2), "Entity2 should have a Position component")
+    testing.expect(t, ecs.has(&world, entity1, Position), "Entity1 should have a Position component")
+    testing.expect(t, ecs.has(&world, entity2, Position), "Entity2 should have a Position component")
 
     // 3. Get components
-    pos1 := ecs.get(&position_pool, entity1)
+    pos1 := ecs.get(&world, entity1, Position)
     testing.expect(t, pos1.x == 10 && pos1.y == 20, "Position data for entity1 is incorrect")
 
     // 4. Remove a component
-    ecs.remove(&position_pool, entity1)
-    testing.expect(t, !ecs.has(&position_pool, entity1), "Entity1 should not have a Position component after removal")
+    ecs.remove(&world, entity1, Position)
+    testing.expect(t, !ecs.has(&world, entity1, Position), "Entity1 should not have a Position component after removal")
 
     // 5. Verify swap-and-pop
-    pos2 := ecs.get(&position_pool, entity2)
+    pos2 := ecs.get(&world, entity2, Position)
     testing.expect(t, pos2.x == 30 && pos2.y == 40, "Position data for entity2 should be unchanged after removing entity1's component")
 
     // 6. Clean up
     ecs.destroy_world(&world)
-    ecs.destroy_component_pool(&position_pool)
 }
