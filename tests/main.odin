@@ -27,8 +27,8 @@ main :: proc() {
     rl.InitWindow(800, 600, "Raven ECS")
 
     world := ecs.World{}
-    transform_pool := ecs.ComponentPool(Transform){}
-    color_pool := ecs.ComponentPool(Color){}
+    transform_pool := ecs.create_component_pool(Transform)
+    color_pool := ecs.create_component_pool(Color)
 
     spawn_dots(&world, &transform_pool, &color_pool, BENCH_N)
 
@@ -47,9 +47,15 @@ main :: proc() {
         }
         rl.BeginDrawing()
         rl.ClearBackground(rl.RAYWHITE)
-        for i in 0..<len(transform_pool.dense) {
-            transform := transform_pool.dense[i]
-            color := color_pool.dense[i]
+        it := ecs.query(&world, &transform_pool.base, &color_pool.base)
+        for {
+            entity, ok := ecs.next(&it)
+            if !ok {
+                break
+            }
+
+            transform := ecs.get(&transform_pool, entity)
+            color := ecs.get(&color_pool, entity)
             rl.DrawCircle(i32(transform.x), i32(transform.y), 10, rl.Color{color.r, color.g, color.b, color.a})
         }
         fps := rl.GetFPS()

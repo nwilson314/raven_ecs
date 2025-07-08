@@ -39,7 +39,7 @@ Position :: struct {
 @(test)
 test_component_lifecycle :: proc(t: ^testing.T) {
     world: ecs.World
-    position_pool: ecs.ComponentPool(Position)
+    position_pool := ecs.create_component_pool(Position)
 
     // 1. Create entities
     entity1 := ecs.make_entity(&world)
