@@ -105,7 +105,7 @@ QueryIterator :: struct {
     current_index:     int,
 }
 
-base_has :: proc(pool: ^BaseComponentPool, entity: EntityID) -> bool {
+base_has :: #force_inline proc(pool: ^BaseComponentPool, entity: EntityID) -> bool {
     idx: i64 = -1
     if i64(entity) < i64(len(pool.sparse)) {
         idx = pool.sparse[i64(entity)]

@@ -5,7 +5,7 @@ import "core:strings"
 import rl "vendor:raylib"
 import ecs "../src/"
 
-BENCH_N :: 100_000
+BENCH_N :: 20_000
 
 Transform :: struct {
     x, y: f32
@@ -45,9 +45,10 @@ main :: proc() {
             }
             fmt.println("Colors changed")
         }
+        it := ecs.query(&world, &transform_pool.base, &color_pool.base)
         rl.BeginDrawing()
         rl.ClearBackground(rl.RAYWHITE)
-        it := ecs.query(&world, &transform_pool.base, &color_pool.base)
+        
         for {
             entity, ok := ecs.next(&it)
             if !ok {
