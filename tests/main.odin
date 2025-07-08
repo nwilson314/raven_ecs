@@ -5,7 +5,7 @@ import "core:strings"
 import rl "vendor:raylib"
 import ecs "../src/"
 
-BENCH_N :: 10_000
+BENCH_N :: 100_000
 
 Transform :: struct {
     x, y: f32
@@ -16,7 +16,7 @@ Color :: struct {
 }
 
 spawn_dots :: proc(world: ^ecs.World, transform_pool: ^ecs.ComponentPool(Transform), color_pool: ^ecs.ComponentPool(Color), n: int) {
-    for i in 0..<n {
+    for _ in 0..<n {
         entity := ecs.make_entity(world)
         ecs.add(transform_pool, world, entity, Transform{f32(rl.GetRandomValue(0, 800)), f32(rl.GetRandomValue(0, 600))})
         ecs.add(color_pool, world, entity, Color{u8(rl.GetRandomValue(0, 255)), u8(rl.GetRandomValue(0, 255)), u8(rl.GetRandomValue(0, 255)), 255})

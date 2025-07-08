@@ -41,15 +41,18 @@ The design is data-oriented and cache-friendly by default, but small enough to d
 
 ---
 
-## Current TODO – Sprint 3 (Sparse-set optimisation)
+## ✅ Sprint 3 – Sparse-set optimisation
 
-1.  **Benchmarking**
-    *   Create a dedicated benchmark test.
-    *   Profile the `update` loop with 100k entities.
-    *   Identify bottlenecks in the `query` and `component` procedures.
+### 1. Benchmarking & Analysis (Complete)
+*   **Dedicated Benchmark:** A benchmark test (`tests/benchmark.odin`) was created to measure performance for 100k entities with two components.
+*   **Baseline Performance:** The initial implementation clocks in at **~2.1 ms** per frame, failing our ≤ 1 ms target.
+*   **Bottleneck Identified:** Through careful measurement, we've confirmed the primary bottleneck is not the logic within the `next()` iterator itself, but the sheer **volume of calls** to it. The current algorithm iterates over the smallest component pool and performs a `base_has` check for every entity, leading to significant overhead from function calls and cache misses when scaled to 100k entities.
 
-2.  **Optimisation**
-    *   Implement optimisations based on profiling data.
-    *   Target ≤ 1 ms update time for 100k entities with `Position` and `Velocity` components.
+### 2. Next Steps: Algorithmic Optimisation
+The path to sub-millisecond frame times requires a fundamental change to the query algorithm.
+*   **Goal:** Reduce the number of iterations required to find matching entities.
+*   **Strategy:**
+    1.  Modify the `add` and `remove` procedures to maintain **sorted** entity ID lists within each component pool.
+    2.  Rewrite the `next` iterator to use a cache-friendly, single-pass "merge" or "zip" algorithm over these sorted lists. This will find the intersection of entities far more efficiently.
 
 _Once these tasks are green, tag the repository `v0.3-sprint3` and roll into Sprint 4._

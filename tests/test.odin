@@ -32,9 +32,7 @@ test_entity_lifecycle :: proc(t: ^testing.T) {
     ecs.destroy_world(&world)
 }
 
-Position :: struct {
-    x, y: f32,
-}
+
 
 @(test)
 test_component_lifecycle :: proc(t: ^testing.T) {

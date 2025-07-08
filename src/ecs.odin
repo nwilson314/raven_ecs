@@ -3,7 +3,7 @@ package ecs
 
 EntityID :: distinct u64
 
-MAX_ENTITIES :: 10_000
+MAX_ENTITIES :: 100_000
 
 World :: struct {
     free_list: [dynamic]u64,
