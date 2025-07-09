@@ -65,3 +65,42 @@ test_component_lifecycle :: proc(t: ^testing.T) {
     // 6. Clean up
     ecs.destroy_world(&world)
 }
+
+@(test)
+test_query_collect :: proc(t: ^testing.T) {
+    world: ecs.World
+    ecs.create_component_pool(&world, Position)
+    ecs.create_component_pool(&world, Velocity)
+
+    // Entity 1: Has Position only
+    e1 := ecs.make_entity(&world)
+    ecs.add(&world, e1, Position{1, 1})
+
+    // Entity 2: Has Position and Velocity
+    e2 := ecs.make_entity(&world)
+    ecs.add(&world, e2, Position{2, 2})
+    ecs.add(&world, e2, Velocity{2, 2})
+
+    // Entity 3: Has Position and Velocity
+    e3 := ecs.make_entity(&world)
+    ecs.add(&world, e3, Position{3, 3})
+    ecs.add(&world, e3, Velocity{3, 3})
+
+    // Collect entities with both components
+    collected_entities := ecs.query_collect(&world, Position, Velocity)
+    defer delete(collected_entities)
+
+    testing.expect_value(t, len(collected_entities), 2)
+
+    // Check that the correct entities were found
+    found_e2 := false
+    found_e3 := false
+    for entity in collected_entities {
+        if entity == e2 { found_e2 = true }
+        if entity == e3 { found_e3 = true }
+    }
+    testing.expect(t, found_e2 && found_e3, "Did not collect the correct entities")
+
+    // Clean up
+    ecs.destroy_world(&world)
+}

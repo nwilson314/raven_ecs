@@ -181,6 +181,20 @@ query :: proc(world: ^World, components: ..typeid) -> ^QueryIterator {
     return it
 }
 
+query_collect :: proc(world: ^World, components: ..typeid) -> [dynamic]EntityID {
+    it := query(world, ..components)
+    entities := make([dynamic]EntityID)
+    for {
+        entity, ok := next(it)
+        if !ok {
+            break
+        }
+        append(&entities, entity)
+    }
+    destroy_iterator(it)
+    return entities
+}
+
 next :: proc(it: ^QueryIterator) -> (entity: EntityID, ok: bool) {
     if it.source_pool_index < 0 {
         return EntityID(~u64(0)), false
