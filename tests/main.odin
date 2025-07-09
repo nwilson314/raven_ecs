@@ -50,8 +50,9 @@ main :: proc() {
         rl.ClearBackground(rl.RAYWHITE)
         
         for {
-            entity, ok := ecs.next(&it)
+            entity, ok := ecs.next(it)
             if !ok {
+                ecs.destroy_iterator(it)
                 break
             }
 

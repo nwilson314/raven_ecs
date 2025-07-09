@@ -13,11 +13,16 @@ Velocity :: struct {
 	dx, dy: f32,
 }
 
+Player :: struct {
+	
+}
+
 @(test)
 test_100k_entities_update :: proc(t: ^testing.T) {
 	world: ecs.World
 	ecs.create_component_pool(&world, Position)
 	ecs.create_component_pool(&world, Velocity)
+	ecs.create_component_pool(&world, Player)
 
 	BENCH_N :: 100_000
 
@@ -36,10 +41,14 @@ test_100k_entities_update :: proc(t: ^testing.T) {
 	for _ in 0..<UPDATE_FRAMES {
 		it := ecs.query(&world, Position, Velocity)
 		for {
-			_, ok := ecs.next(&it)
+			entity, ok := ecs.next(it)
 			if !ok {
+				ecs.destroy_iterator(it)
 				break
 			}
+
+			ecs.get(&world, entity, Position)
+			ecs.get(&world, entity, Velocity)
 		}
 	}
 

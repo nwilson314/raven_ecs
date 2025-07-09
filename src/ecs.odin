@@ -132,9 +132,18 @@ destroy_component_pool :: proc(cp: ^ComponentPool($T)) {
 // --- Query System ---
 
 QueryIterator :: struct {
-    pools:             []^BaseComponentPool,
+    pools:             [dynamic]^BaseComponentPool,
     source_pool_index: int,
     current_index:     int,
+}
+
+destroy_iterator :: proc(it: ^QueryIterator) {
+    if it == nil {
+        return
+    }
+
+    delete(it.pools)
+    free(it)
 }
 
 base_has :: #force_inline proc(pool: ^BaseComponentPool, entity: EntityID) -> bool {
@@ -145,37 +154,31 @@ base_has :: #force_inline proc(pool: ^BaseComponentPool, entity: EntityID) -> bo
     return idx >= 0
 }
 
-query_by_pools :: proc "contextless" (world: ^World, pools: ..^BaseComponentPool) -> QueryIterator {
-    source_pool_index := -1
-    min_len := MAX_ENTITIES + 1
+query :: proc(world: ^World, components: ..typeid) -> ^QueryIterator {
+    it := new(QueryIterator)
+    it.current_index = -1
+    it.pools = make([dynamic]^BaseComponentPool)
+    it.source_pool_index = -1
 
-    for pool, i in pools {
-        pool_len := len(pool.owners)
+    min_len := MAX_ENTITIES + 1
+    
+    for component_type, i in components {
+        pool, ok := world.pools[component_type]
+
+        if !ok {
+            return it
+        }
+
+        append(&it.pools, pool)
+
+        pool_len := len(pool.owners) 
         if pool_len < min_len {
             min_len = pool_len
-            source_pool_index = i
+            it.source_pool_index = i
         }
     }
 
-    return QueryIterator{
-        pools             = pools,
-        source_pool_index = source_pool_index,
-        current_index     = -1,
-    }
-}
-
-query :: proc(world: ^World, components: ..typeid) -> QueryIterator {
-    pools := world.pools
-    pools_by_type := make([dynamic]^BaseComponentPool)
-    defer delete(pools_by_type)
-    for component_type in components {
-        pool, ok := pools[component_type]
-        if !ok {
-            return QueryIterator{pools = {}, source_pool_index = -1, current_index = -1}
-        }
-        append(&pools_by_type, pool)
-    }
-    return query_by_pools(world, ..pools_by_type[:])
+    return it
 }
 
 next :: proc(it: ^QueryIterator) -> (entity: EntityID, ok: bool) {
