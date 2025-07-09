@@ -27,7 +27,7 @@ main :: proc() {
     rl.InitWindow(800, 600, "Raven ECS")
 
     world := ecs.World{}
-    transform_pool := ecs.create_component_pool(&world, Transform)
+    ecs.create_component_pool(&world, Transform)
     color_pool := ecs.create_component_pool(&world, Color)
 
     spawn_dots(&world, BENCH_N)
@@ -45,7 +45,7 @@ main :: proc() {
             }
             fmt.println("Colors changed")
         }
-        it := ecs.query(&world, &transform_pool.base, &color_pool.base)
+        it := ecs.query(&world, Transform, Color)
         rl.BeginDrawing()
         rl.ClearBackground(rl.RAYWHITE)
         

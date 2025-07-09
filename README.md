@@ -39,6 +39,54 @@ To pull the latest changes from the Raven ECS repository into your project, navi
 git submodule update --remote vendor/raven_ecs
 ```
 
+## Usage
+
+Here is a basic example of how to use Raven-ECS:
+
+```odin
+package main
+
+import "core:fmt"
+import ecs "vendor:raven_ecs/src" // Adjust import path as needed
+
+// 1. Define components as simple structs
+Position :: struct {
+	x, y: f32,
+}
+
+Velocity :: struct {
+	dx, dy: f32,
+}
+
+main :: proc() {
+	// 2. Create a world
+	world: ecs.World
+	defer ecs.destroy_world(&world) // Handles all cleanup automatically
+
+	// 3. Create component pools. The world will manage their memory.
+	position_pool := ecs.create_component_pool(&world, Position)
+	velocity_pool := ecs.create_component_pool(&world, Velocity)
+
+	// 4. Create an entity and add components
+	player := ecs.make_entity(&world)
+	ecs.add(&world, player, Position{10, 20})
+	ecs.add(&world, player, Velocity{1, 0})
+
+	// 5. Query for entities with both Position and Velocity
+	fmt.println("Moving entities:")
+	it := ecs.query(&world, Position, Velocity)
+	for {
+		entity, ok := ecs.next(&it)
+		if !ok {
+			break
+		}
+		pos := ecs.get(&world, entity, Position)
+		vel := ecs.get(&world, entity, Velocity)
+		fmt.printf("  -> Entity %v is at (%v, %v) with velocity (%v, %v)\n", entity, pos.x, pos.y, vel.dx, vel.dy)
+	}
+}
+```
+
 ## Performance
 
 The query iterator has been optimized to achieve an average update time of **~0.16ms** for 100,000 entities on an Apple M1 Pro.

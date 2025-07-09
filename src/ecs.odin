@@ -145,7 +145,7 @@ base_has :: #force_inline proc(pool: ^BaseComponentPool, entity: EntityID) -> bo
     return idx >= 0
 }
 
-query :: proc "contextless" (world: ^World, pools: ..^BaseComponentPool) -> QueryIterator {
+query_by_pools :: proc "contextless" (world: ^World, pools: ..^BaseComponentPool) -> QueryIterator {
     source_pool_index := -1
     min_len := MAX_ENTITIES + 1
 
@@ -162,6 +162,20 @@ query :: proc "contextless" (world: ^World, pools: ..^BaseComponentPool) -> Quer
         source_pool_index = source_pool_index,
         current_index     = -1,
     }
+}
+
+query :: proc(world: ^World, components: ..typeid) -> QueryIterator {
+    pools := world.pools
+    pools_by_type := make([dynamic]^BaseComponentPool)
+    defer delete(pools_by_type)
+    for component_type in components {
+        pool, ok := pools[component_type]
+        if !ok {
+            return QueryIterator{pools = {}, source_pool_index = -1, current_index = -1}
+        }
+        append(&pools_by_type, pool)
+    }
+    return query_by_pools(world, ..pools_by_type[:])
 }
 
 next :: proc(it: ^QueryIterator) -> (entity: EntityID, ok: bool) {

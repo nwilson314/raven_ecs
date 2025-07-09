@@ -16,8 +16,8 @@ Velocity :: struct {
 @(test)
 test_100k_entities_update :: proc(t: ^testing.T) {
 	world: ecs.World
-	position_pool := ecs.create_component_pool(&world, Position)
-	velocity_pool := ecs.create_component_pool(&world, Velocity)
+	ecs.create_component_pool(&world, Position)
+	ecs.create_component_pool(&world, Velocity)
 
 	BENCH_N :: 100_000
 
@@ -34,7 +34,7 @@ test_100k_entities_update :: proc(t: ^testing.T) {
 	start_time := time.tick_now()
 
 	for _ in 0..<UPDATE_FRAMES {
-		it := ecs.query(&world, &position_pool.base, &velocity_pool.base)
+		it := ecs.query(&world, Position, Velocity)
 		for {
 			_, ok := ecs.next(&it)
 			if !ok {
