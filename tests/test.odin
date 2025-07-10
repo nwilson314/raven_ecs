@@ -104,3 +104,26 @@ test_query_collect :: proc(t: ^testing.T) {
     // Clean up
     ecs.destroy_world(&world)
 }
+
+@(test)
+test_destroy_entity_removes_components :: proc(t: ^testing.T) {
+    world: ecs.World
+    ecs.create_component_pool(&world, Position)
+
+    // 1. Create and destroy an entity
+    e1 := ecs.make_entity(&world)
+    ecs.add(&world, e1, Position{1, 1})
+    testing.expect(t, ecs.has(&world, e1, Position), "Entity should have component before being destroyed")
+    
+    ecs.destroy_entity(&world, e1)
+
+    // 2. Create a new entity, which should reuse the ID of e1
+    e2 := ecs.make_entity(&world)
+
+    // 3. Assert that the new entity does not have the old one's component
+    testing.expect_value(t, e1, e2)
+    testing.expect(t, !ecs.has(&world, e2, Position), "New entity should not have component from destroyed entity")
+
+    // Clean up
+    ecs.destroy_world(&world)
+}

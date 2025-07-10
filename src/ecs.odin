@@ -30,6 +30,14 @@ make_entity :: proc(world: ^World) -> EntityID {
 }
 
 destroy_entity :: proc(world: ^World, entity: EntityID) {
+    for _, pool in world.pools {
+        if base_has(pool, entity) {
+            // shrink dense array
+            pool.remover(pool, entity)
+            // shrink owners and sparse array
+            base_remove(pool, entity)
+        }
+    }
     append(&world.free_list, u64(entity))
 }
 
@@ -37,6 +45,7 @@ BaseComponentPool :: struct {
     owners: [dynamic]EntityID,
     sparse: [dynamic]i64,
     destroyer: proc(cp: ^BaseComponentPool),
+    remover:   proc(pool: ^BaseComponentPool, entity: EntityID),
 }
 
 ComponentPool :: struct($T: typeid) {
@@ -57,11 +66,25 @@ create_component_pool :: proc(world: ^World, $T: typeid) -> ^ComponentPool(T) {
         delete(pool.base.sparse)
         free(pool)
     }
+    remover := proc(pool: ^BaseComponentPool, entity: EntityID) {
+        // shrink dense array
+        cp := cast(^ComponentPool(T))pool
+        
+        idx := cp.base.sparse[i64(entity)]
+        last_idx := len(cp.dense) - 1
+
+        if idx != i64(last_idx) {
+            cp.dense[idx] = cp.dense[last_idx]
+        }
+        resize(&cp.dense, last_idx)
+    }
+
     component_pool := new(ComponentPool(T))
     component_pool.base = BaseComponentPool{
         owners = {},
         sparse = sparse,
         destroyer = destroyer,
+        remover = remover,
     }
 
     register_component_pool(world, component_pool)
@@ -123,6 +146,31 @@ remove :: proc(world: ^World, entity: EntityID, $T: typeid) {
     cp.base.sparse[i64(entity)] = -1
 }
 
+base_has :: #force_inline proc(pool: ^BaseComponentPool, entity: EntityID) -> bool {
+    idx: i64 = -1
+    if i64(entity) < i64(len(pool.sparse)) {
+        idx = pool.sparse[i64(entity)]
+    }
+    return idx >= 0
+}
+
+base_remove :: proc(pool: ^BaseComponentPool, entity: EntityID) {
+    idx := pool.sparse[i64(entity)]
+    last_idx := len(pool.owners) - 1
+
+    if idx != i64(last_idx) {
+        // Move the last element into the place of the one being removed
+        moved_entity := pool.owners[last_idx]
+        pool.owners[idx] = moved_entity
+        // Update the sparse array for the moved entity
+        pool.sparse[i64(moved_entity)] = idx
+    }
+
+    // Shrink the arrays
+    resize(&pool.owners, last_idx)
+    pool.sparse[i64(entity)] = -1
+}
+
 destroy_component_pool :: proc(cp: ^ComponentPool($T)) {
     delete(cp.dense)
     delete(cp.base.owners)
@@ -144,14 +192,6 @@ destroy_iterator :: proc(it: ^QueryIterator) {
 
     delete(it.pools)
     free(it)
-}
-
-base_has :: #force_inline proc(pool: ^BaseComponentPool, entity: EntityID) -> bool {
-    idx: i64 = -1
-    if i64(entity) < i64(len(pool.sparse)) {
-        idx = pool.sparse[i64(entity)]
-    }
-    return idx >= 0
 }
 
 query :: proc(world: ^World, components: ..typeid) -> ^QueryIterator {
