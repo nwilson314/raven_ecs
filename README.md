@@ -1,10 +1,14 @@
 # Raven ECS
 
-A simple ECS implementation in Odin.
+A high-performance Entity Component System (ECS) written in Odin, designed for game development and simulation applications.
 
-## Odin ECS – Project Overview
-A minimal-yet-extensible **Entity–Component–System** framework written in the **Odin programming language**.  
-The design is data-oriented and cache-friendly by default, but small enough to drop into any solo-dev game project and grow over time.
+## Features
+
+- **Fast Entity Management**: Efficient entity creation/destruction with ID recycling
+- **Component Pools**: Sparse set data structure for optimal memory layout and cache performance
+- **Query System**: Fast iteration over entities with specific component combinations
+- **Memory Efficient**: Uses sparse arrays and dense arrays for optimal memory usage
+- **Type Safe**: Leverages Odin's type system for compile-time safety
 
 ## Installation
 
@@ -27,9 +31,19 @@ Finally, you can import and use the library in your code:
 ```odin
 import ecs "raven:ecs"
 
-// ...
+// Create a world
 world := ecs.World{}
+
+// Create component pools for each component type
+ecs.create_component_pool(&world, Transform)
+ecs.create_component_pool(&world, Color)
+ecs.create_component_pool(&world, Velocity)
+
+// Clean up when done
+defer ecs.destroy_world(&world)
 ```
+
+
 
 ### Updating the Submodule
 
@@ -39,131 +53,219 @@ To pull the latest changes from the Raven ECS repository into your project, navi
 git submodule update --remote vendor/raven_ecs
 ```
 
-## Usage
+## Architecture
 
-Here is a basic example of how to use Raven-ECS:
+The ECS uses a **sparse set** data structure where:
+- **Dense arrays** store actual component data and entity owners
+- **Sparse arrays** provide O(1) entity-to-index lookups
+- **Component pools** are created per component type
+- **Entity IDs** are recycled when entities are destroyed
+
+## Basic Usage
+
+### 1. Setup
+
+```odin
+import ecs "path/to/raven_ecs"
+
+// Create a world
+world := ecs.World{}
+
+// Create component pools for each component type
+ecs.create_component_pool(&world, Transform)
+ecs.create_component_pool(&world, Color)
+ecs.create_component_pool(&world, Velocity)
+
+// Clean up when done
+defer ecs.destroy_world(&world)
+```
+
+### 2. Component Definitions
+
+```odin
+Transform :: struct {
+    x, y: f32
+}
+
+Color :: struct {
+    r, g, b, a: u8
+}
+
+Velocity :: struct {
+    dx, dy: f32
+}
+```
+
+### 3. Entity Management
+
+```odin
+// Create an entity
+entity := ecs.make_entity(&world)
+
+// Add components to an entity
+ecs.add(&world, entity, Transform{100, 200})
+ecs.add(&world, entity, Color{255, 0, 0, 255})
+ecs.add(&world, entity, Velocity{5, 3})
+
+// Check if entity has a component
+if ecs.has(&world, entity, Transform) {
+    // Entity has Transform component
+}
+
+// Get a component (returns pointer and success flag)
+if transform, ok := ecs.get(&world, entity, Transform); ok {
+    transform.x += 10
+    transform.y += 5
+}
+
+// Remove a component
+ecs.remove(&world, entity, Color)
+
+// Destroy an entity (removes all components)
+ecs.destroy_entity(&world, entity)
+```
+
+### 4. Querying Entities
+
+#### Manual Iteration
+```odin
+// Query entities with specific components
+it := ecs.query(&world, Transform, Velocity)
+defer ecs.destroy_iterator(it)
+
+for {
+    entity, ok := ecs.next(it)
+    if !ok {
+        break
+    }
+    
+    // Process entity
+    transform, _ := ecs.get(&world, entity, Transform)
+    velocity, _ := ecs.get(&world, entity, Velocity)
+    
+    // Update logic
+    transform.x += velocity.dx
+    transform.y += velocity.dy
+}
+```
+
+#### Collect All Matching Entities
+```odin
+// Get all entities with specific components
+entities := ecs.query_collect(&world, Transform, Color)
+defer delete(entities)
+
+for entity in entities {
+    // Process each entity
+    transform, _ := ecs.get(&world, entity, Transform)
+    color, _ := ecs.get(&world, entity, Color)
+    
+    // Render logic
+    draw_circle(transform.x, transform.y, color)
+}
+```
+
+## Performance Characteristics
+
+- **Entity Creation**: O(1) amortized
+- **Component Addition**: O(1) amortized
+- **Component Access**: O(1)
+- **Component Removal**: O(1) with swap-and-pop optimization
+- **Query Iteration**: O(n) where n is the number of entities with the rarest component
+- **Memory**: Sparse arrays use MAX_ENTITIES (100,000) slots per component type
+
+## Best Practices
+
+1. **Reuse Iterators**: Create iterators once and reuse them in update loops
+2. **Batch Operations**: Group entity operations when possible
+3. **Component Pool Order**: Create component pools in the order they'll be used most frequently
+4. **Memory Management**: Always call `destroy_world()` to clean up resources
+5. **Iterator Cleanup**: Use `defer ecs.destroy_iterator(it)` or manually destroy iterators
+
+## Example: Simple Game Loop
 
 ```odin
 package main
 
 import "core:fmt"
-import ecs "vendor:raven_ecs/src" // Adjust import path as needed
+import ecs "path/to/raven_ecs"
 
-// 1. Define components as simple structs
-Position :: struct {
-	x, y: f32,
-}
-
-Velocity :: struct {
-	dx, dy: f32,
-}
+Transform :: struct { x, y: f32 }
+Velocity :: struct { dx, dy: f32 }
+Renderable :: struct { color: u32 }
 
 main :: proc() {
-	// 2. Create a world
-	world: ecs.World
-	defer ecs.destroy_world(&world) // Handles all cleanup automatically
-
-	// 3. Create component pools. The world will manage their memory.
-	position_pool := ecs.create_component_pool(&world, Position)
-	velocity_pool := ecs.create_component_pool(&world, Velocity)
-
-	// 4. Create an entity and add components
-	player := ecs.make_entity(&world)
-	ecs.add(&world, player, Position{10, 20})
-	ecs.add(&world, player, Velocity{1, 0})
-
-	// 5. Query for entities with both Position and Velocity
-	fmt.println("Moving entities:")
-	it := ecs.query(&world, Position, Velocity)
-	for {
-		entity, ok := ecs.next(&it)
-		if !ok {
-			break
-		}
-		pos := ecs.get(&world, entity, Position)
-		vel := ecs.get(&world, entity, Velocity)
-		fmt.printf("  -> Entity %v is at (%v, %v) with velocity (%v, %v)\n", entity, pos.x, pos.y, vel.dx, vel.dy)
-	}
+    world := ecs.World{}
+    defer ecs.destroy_world(&world)
+    
+    // Setup component pools
+    ecs.create_component_pool(&world, Transform)
+    ecs.create_component_pool(&world, Velocity)
+    ecs.create_component_pool(&world, Renderable)
+    
+    // Spawn entities
+    for i in 0..<1000 {
+        entity := ecs.make_entity(&world)
+        ecs.add(&world, entity, Transform{f32(i), 0})
+        ecs.add(&world, entity, Velocity{1, 1})
+        ecs.add(&world, entity, Renderable{0xFF0000FF})
+    }
+    
+    // Game loop
+    for frame in 0..<60 {
+        // Update physics
+        it := ecs.query(&world, Transform, Velocity)
+        for {
+            entity, ok := ecs.next(it)
+            if !ok {
+                ecs.destroy_iterator(it)
+                break
+            }
+            
+            transform, _ := ecs.get(&world, entity, Transform)
+            velocity, _ := ecs.get(&world, entity, Velocity)
+            
+            transform.x += velocity.dx
+            transform.y += velocity.dy
+        }
+        
+        // Render
+        render_it := ecs.query(&world, Transform, Renderable)
+        for {
+            entity, ok := ecs.next(render_it)
+            if !ok {
+                ecs.destroy_iterator(render_it)
+                break
+            }
+            
+            transform, _ := ecs.get(&world, entity, Transform)
+            renderable, _ := ecs.get(&world, entity, Renderable)
+            
+            // Draw entity
+            fmt.printf("Drawing entity %v at (%v, %v) with color %v\n", 
+                      entity, transform.x, transform.y, renderable.color)
+        }
+    }
 }
 ```
 
-## Performance
+## Limitations
 
-The query iterator has been optimized to achieve an average update time of **~0.16ms** for 100,000 entities on an Apple M1 Pro.
+- Maximum entities: 100,000 (configurable via `MAX_ENTITIES`)
+- Component types must be known at compile time
+- No built-in serialization
+- No component inheritance or composition
+- No automatic memory management for component data
 
-The key to this performance was not complex algorithmic changes, but rather enabling the Odin compiler's aggressive optimizations using the `-o:speed` flag during compilation. This highlights the power of the Odin compiler and the importance of benchmarking with release/optimized builds.
+## Building and Testing
 
-To run the benchmark:
 ```bash
-odin test tests/ -vet -o:speed
+# Run tests
+odin test tests/
+
+# Run benchmarks
+odin test tests/benchmark.odin -file
+
+# Build example
+odin build tests/main.odin
 ```
-
-### High-Level Roadmap (6 weekly sprints)
-
-| Sprint | Theme | Deliverable |
-| ------ | ----- | ----------- |
-| 0 | Project bootstrap | Odin + Raylib window; hot-reload script |
-| 1 | Entity & component core | Free-list `EntityID`s, generic sparse-set component pools; 10 k-dot demo @ ≥60 FPS |
-| 2 | Query & System layer | `Query(Position, Velocity)` API; system scheduler |
-| 3 | Sparse-set optimisation | Bench ≤ 1 ms update for 100 k entities |
-| 4 | Archetype chunks & demo | Tank-arena game running live add/remove |
-| 5 | Lifetime safety & events | Deferred destroy queue; event bus |
-| 6 | Serialization & jobs | Save/load JSON; multithreaded systems |
-
----
-
-## Completed Milestones
-
-### ✅ Sprint 0 – Project Bootstrap
-* Odin module initialised, Raylib bindings added.  
-* `src/main.odin` opens a window; hot-reload script in `scripts/`.  
-
-### ✅ Sprint 1 – Entity & Component Core
-* `World` with free-list allocator for **O(1)** create/destroy.  
-* Generic `ComponentPool(T)` implementing dense-array + sparse-index storage.  
-* Swap-and-pop removal keeps arrays compact.  
-* Unit tests for entity & component lifecycles (`tests/test.odin`).  
-* Rendering test spawns **10 000** coloured circles at ~71 FPS (meets 60 FPS target).  
-
-### ✅ Sprint 2 – Queries & Systems
-*   **Iterator-Based Query System**: Implemented `ecs.query()` which takes a variable number of component pools and returns a `QueryIterator`.
-*   **Optimized Iteration**: The query iterator automatically selects the smallest component pool as its source, minimizing iteration cost. It then checks for component existence in the other pools for each entity.
-*   **Refactored Demo**: The main rendering loop in `tests/main.odin` was refactored to use the new `query` API, cleaning up the code and demonstrating the new functionality.
-*   **Comprehensive Tests**: Added unit tests for the query system to ensure correctness and prevent regressions.
-
----
-
-## ✅ Sprint 3 – Sparse-set Optimisation (Complete)
-
-*   **Goal:** Achieve ≤ 1 ms update time for 100,000 entities.
-*   **Benchmark Created:** A dedicated benchmark (`tests/benchmark.odin`) was created to rigorously test query performance.
-*   **Bottleneck Identified:** Initial tests showed performance at ~2.1ms. Analysis revealed the bottleneck was not algorithmic complexity, but CPU cache misses caused by random memory access in the `base_has` check during iteration.
-*   **Solution Found:** After exploring several manual optimization strategies, the solution was discovered to be enabling the Odin compiler's built-in optimizations. Compiling with the `-o:speed` flag reduced the average update time to **~0.2ms**, far exceeding the original goal.
-*   **Key Takeaway:** The Odin compiler is highly effective at optimizing memory access patterns. For performance-critical code, always benchmark with release optimizations (`-o:speed`) enabled.
-
----
-
-### Sprint 3.5: World-Centric API (Complete)
-
-*   **Goal:** Refactor the ECS to improve its ergonomics and safety, without changing the underlying sparse-set performance. The `World` will become the central owner of all component data.
-*   **Result:** Refactored the core API so the `World` now owns and manages all component pools. Component pools are created on the heap and registered with the world automatically. `destroy_world` handles all cleanup. All ECS procedures (`add`, `get`, `has`, `remove`) now operate through the `world` pointer, improving ergonomics and safety.
-
----
-
-## Current Goal: Sprint 4 - Archetype-Based Storage
-
-With the world-centric API complete, the next major goal is to transition from a component-centric storage model (SoA) to an archetype-based model. This involves grouping entities with the same component composition into contiguous memory chunks, which will dramatically improve query performance and memory locality.
-
-### Sprint 4: Archetype Chunk System (Next)
-
-*   **Goal:** Evolve the ECS architecture from sparse sets to an archetype-based model to achieve maximum iteration performance and lay the foundation for a real game demo.
-*   **Strategy:**
-    1.  **Archetype Core:** Design and implement an `Archetype` struct that represents a unique combination of component types. The `World` will manage a collection of these archetypes.
-    2.  **Chunk-Based Storage:** Instead of individual component pools, memory will be organized into large, contiguous `Chunks` of data. Each chunk will belong to a single archetype and store all the component data for the entities within it.
-    3.  **Refactor API:** Update the `add`, `remove`, and `query` procedures to work with the new archetype system. Adding or removing a component will now involve moving an entity's data from one archetype to another.
-    4.  **Tank Demo:** Build a simple "tank arena" demo to showcase the new architecture and its ability to handle live entity creation and destruction in a game context.
-
-### Goal
-
-- [x] Create a simple ECS framework in Odin.
-- [x] Optimize the query iterator to be as fast as possible.

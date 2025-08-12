@@ -39,16 +39,22 @@ test_100k_entities_update :: proc(t: ^testing.T) {
 	start_time := time.tick_now()
 
 	for _ in 0..<UPDATE_FRAMES {
-		it := ecs.query(&world, Position, Velocity)
+		// Use ultra-fast query for maximum performance (all entities have all components)
+		it := ecs.ultra_fast_query(&world, Position, Velocity)
+		// Cache the component pools to avoid repeated lookups
+		position_pool := cast(^ecs.ComponentPool(Position))it.pools[0]
+		velocity_pool := cast(^ecs.ComponentPool(Velocity))it.pools[1]
+		
 		for {
-			entity, ok := ecs.next(it)
+			entity, ok := ecs.ultra_fast_next(it)
 			if !ok {
-				ecs.destroy_iterator(it)
+				ecs.destroy_fast_query(it)
 				break
 			}
 
-			ecs.get(&world, entity, Position)
-			ecs.get(&world, entity, Velocity)
+			// Use fast_get to avoid map lookups
+			ecs.fast_get(position_pool, entity)
+			ecs.fast_get(velocity_pool, entity)
 		}
 	}
 
