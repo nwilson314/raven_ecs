@@ -5,7 +5,7 @@ import "core:strings"
 import rl "vendor:raylib"
 import ecs "../src/"
 
-BENCH_N :: 20_000
+BENCH_N :: 10_000
 
 Transform :: struct {
     x, y: f32
@@ -59,8 +59,10 @@ main :: proc() {
                 break
             }
 
-            transform, ok_transform := ecs.get(&world, entity, Transform)
-            color, ok_color := ecs.get(&world, entity, Color)
+            transform, ok_transform := ecs.get_from_query(it, entity, Transform)
+            color, ok_color := ecs.get_from_query(it, entity, Color)
+            // transform, ok_transform := ecs.get(&world, entity, Transform)
+            // color, ok_color := ecs.get(&world, entity, Color)
             if ok_transform && ok_color {
                 rl.DrawCircle(i32(transform.x), i32(transform.y), 10, rl.Color{color.r, color.g, color.b, color.a})
             }

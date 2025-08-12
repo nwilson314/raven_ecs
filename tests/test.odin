@@ -37,29 +37,29 @@ test_entity_lifecycle :: proc(t: ^testing.T) {
 @(test)
 test_component_lifecycle :: proc(t: ^testing.T) {
     world: ecs.World
-    ecs.create_component_pool(&world, Position)
+    ecs.create_component_pool(&world, ecs.Position)
 
     // 1. Create entities
     entity1 := ecs.make_entity(&world)
     entity2 := ecs.make_entity(&world)
 
     // 2. Add components
-    ecs.add(&world, entity1, Position{10, 20})
-    ecs.add(&world, entity2, Position{30, 40})
+    ecs.add(&world, entity1, ecs.Position{10, 20})
+    ecs.add(&world, entity2, ecs.Position{30, 40})
 
-    testing.expect(t, ecs.has(&world, entity1, Position), "Entity1 should have a Position component")
-    testing.expect(t, ecs.has(&world, entity2, Position), "Entity2 should have a Position component")
+    testing.expect(t, ecs.has(&world, entity1, ecs.Position), "Entity1 should have a Position component")
+    testing.expect(t, ecs.has(&world, entity2, ecs.Position), "Entity2 should have a Position component")
 
     // 3. Get components
-    pos1, _ := ecs.get(&world, entity1, Position)
+    pos1, _ := ecs.get(&world, entity1, ecs.Position)
     testing.expect(t, pos1.x == 10 && pos1.y == 20, "Position data for entity1 is incorrect")
 
     // 4. Remove a component
-    ecs.remove(&world, entity1, Position)
-    testing.expect(t, !ecs.has(&world, entity1, Position), "Entity1 should not have a Position component after removal")
+    ecs.remove(&world, entity1, ecs.Position)
+    testing.expect(t, !ecs.has(&world, entity1, ecs.Position), "Entity1 should not have a Position component after removal")
 
     // 5. Verify swap-and-pop
-    pos2, _ := ecs.get(&world, entity2, Position)
+    pos2, _ := ecs.get(&world, entity2, ecs.Position)
     testing.expect(t, pos2.x == 30 && pos2.y == 40, "Position data for entity2 should be unchanged after removing entity1's component")
 
     // 6. Clean up
@@ -69,25 +69,25 @@ test_component_lifecycle :: proc(t: ^testing.T) {
 @(test)
 test_query_collect :: proc(t: ^testing.T) {
     world: ecs.World
-    ecs.create_component_pool(&world, Position)
-    ecs.create_component_pool(&world, Velocity)
+    ecs.create_component_pool(&world, ecs.Position)
+    ecs.create_component_pool(&world, ecs.Velocity)
 
     // Entity 1: Has Position only
     e1 := ecs.make_entity(&world)
-    ecs.add(&world, e1, Position{1, 1})
+    ecs.add(&world, e1, ecs.Position{1, 1})
 
     // Entity 2: Has Position and Velocity
     e2 := ecs.make_entity(&world)
-    ecs.add(&world, e2, Position{2, 2})
-    ecs.add(&world, e2, Velocity{2, 2})
+    ecs.add(&world, e2, ecs.Position{2, 2})
+    ecs.add(&world, e2, ecs.Velocity{2, 2})
 
     // Entity 3: Has Position and Velocity
     e3 := ecs.make_entity(&world)
-    ecs.add(&world, e3, Position{3, 3})
-    ecs.add(&world, e3, Velocity{3, 3})
+    ecs.add(&world, e3, ecs.Position{3, 3})
+    ecs.add(&world, e3, ecs.Velocity{3, 3})
 
     // Collect entities with both components
-    collected_entities := ecs.query_collect(&world, Position, Velocity)
+    collected_entities := ecs.query_collect(&world, ecs.Position, ecs.Velocity)
     defer delete(collected_entities)
 
     testing.expect_value(t, len(collected_entities), 2)
@@ -108,12 +108,12 @@ test_query_collect :: proc(t: ^testing.T) {
 @(test)
 test_destroy_entity_removes_components :: proc(t: ^testing.T) {
     world: ecs.World
-    ecs.create_component_pool(&world, Position)
+    ecs.create_component_pool(&world, ecs.Position)
 
     // 1. Create and destroy an entity
     e1 := ecs.make_entity(&world)
-    ecs.add(&world, e1, Position{1, 1})
-    testing.expect(t, ecs.has(&world, e1, Position), "Entity should have component before being destroyed")
+    ecs.add(&world, e1, ecs.Position{1, 1})
+    testing.expect(t, ecs.has(&world, e1, ecs.Position), "Entity should have component before being destroyed")
     
     ecs.destroy_entity(&world, e1)
 
@@ -122,8 +122,49 @@ test_destroy_entity_removes_components :: proc(t: ^testing.T) {
 
     // 3. Assert that the new entity does not have the old one's component
     testing.expect_value(t, e1, e2)
-    testing.expect(t, !ecs.has(&world, e2, Position), "New entity should not have component from destroyed entity")
+    testing.expect(t, !ecs.has(&world, e2, ecs.Position), "New entity should not have component from destroyed entity")
 
     // Clean up
+    ecs.destroy_world(&world)
+}
+
+@(test)
+test_query_with_helper_functions :: proc(t: ^testing.T) {
+    world: ecs.World
+    ecs.create_component_pool(&world, ecs.Position)
+    ecs.create_component_pool(&world, ecs.Velocity)
+
+    // Create entities with both components
+    e1 := ecs.make_entity(&world)
+    ecs.add(&world, e1, ecs.Position{10, 20})
+    ecs.add(&world, e1, ecs.Velocity{5, 3})
+
+    e2 := ecs.make_entity(&world)
+    ecs.add(&world, e2, ecs.Position{30, 40})
+    ecs.add(&world, e2, ecs.Velocity{1, 2})
+
+    // Test the new helper functions
+    it := ecs.query(&world, ecs.Position, ecs.Velocity)
+    
+    // Get first entity
+    entity, ok := ecs.next(it)
+    testing.expect(t, ok, "Should get first entity")
+    
+    // Use helper functions to get components
+    pos, pos_ok := ecs.get_from_query(it, entity, ecs.Position)
+    vel, vel_ok := ecs.get_from_query(it, entity, ecs.Velocity)
+    
+    testing.expect(t, pos_ok, "Should get Position component")
+    testing.expect(t, vel_ok, "Should get Velocity component")
+    testing.expect(t, pos.x == 10 && pos.y == 20, "Position data should be correct")
+    testing.expect(t, vel.dx == 5 && vel.dy == 3, "Velocity data should be correct")
+    
+    // Test that components are the right types (this will compile if types are correct)
+    pos.x += vel.dx  // This should work if pos is ^Position and vel is ^Velocity
+    pos.y += vel.dy
+    
+    testing.expect(t, pos.x == 15 && pos.y == 23, "Component modification should work")
+    
+    ecs.destroy_iterator(it)
     ecs.destroy_world(&world)
 }

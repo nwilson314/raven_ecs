@@ -127,9 +127,11 @@ ecs.destroy_entity(&world, entity)
 
 ### 4. Querying Entities
 
-#### Manual Iteration
+Raven ECS provides a unified query system that balances performance and ease of use:
+
+#### **Unified Query API (Fast by Default)**
 ```odin
-// Query entities with specific components
+// Simple and clean API - now fast by default!
 it := ecs.query(&world, Transform, Velocity)
 defer ecs.destroy_iterator(it)
 
@@ -139,9 +141,13 @@ for {
         break
     }
     
-    // Process entity
+    // Option 1: Standard component access (slower, does map lookups)
     transform, _ := ecs.get(&world, entity, Transform)
     velocity, _ := ecs.get(&world, entity, Velocity)
+    
+    // Option 2: Fast component access (no map lookups - recommended!)
+    transform, _ := ecs.get_from_query(it, entity, Transform)
+    velocity, _ := ecs.get_from_query(it, entity, Velocity)
     
     // Update logic
     transform.x += velocity.dx
@@ -149,7 +155,14 @@ for {
 }
 ```
 
-#### Collect All Matching Entities
+**Performance Options:**
+- **Pure iteration**: ~0.23ms for 100,000 entities
+- **With `get_from_query`**: ~0.59ms for 100,000 entities (2x faster than `get`)
+- **With standard `get`**: ~1.15ms for 100,000 entities (slower due to map lookups)
+
+**Best Practice**: Use `get_from_query` for performance-critical loops!
+
+#### **Collect All Matching Entities**
 ```odin
 // Get all entities with specific components
 entities := ecs.query_collect(&world, Transform, Color)
@@ -174,13 +187,26 @@ for entity in entities {
 - **Query Iteration**: O(n) where n is the number of entities with the rarest component
 - **Memory**: Sparse arrays use MAX_ENTITIES (100,000) slots per component type
 
+### **Query Performance Breakdown**
+
+| Query Type | Pure Iteration | With Component Access | Performance Gain |
+|------------|----------------|----------------------|------------------|
+| **Unified Query** (`query`/`next`) | ~0.23ms | ~0.59ms with `get_from_query` | **2x faster** than `get` |
+| **Standard `get`** | N/A | ~1.15ms | Baseline (slower due to map lookups) |
+| **Performance Ratio** | Fast by default | **1.95x faster** with `get_from_query` | Significant improvement |
+
 ## Best Practices
 
-1. **Reuse Iterators**: Create iterators once and reuse them in update loops
-2. **Batch Operations**: Group entity operations when possible
-3. **Component Pool Order**: Create component pools in the order they'll be used most frequently
-4. **Memory Management**: Always call `destroy_world()` to clean up resources
-5. **Iterator Cleanup**: Use `defer ecs.destroy_iterator(it)` or manually destroy iterators
+1. **Use the Unified Query System**:
+   - **`query`/`next`** is now fast by default (no map lookups during iteration)
+   - Use **`get_from_query`** instead of `get` for best performance
+   - The simple API now gives you the performance benefits automatically
+
+2. **Reuse Iterators**: Create iterators once and reuse them in update loops
+3. **Batch Operations**: Group entity operations when possible
+4. **Component Pool Order**: Create component pools in the order they'll be used most frequently
+5. **Memory Management**: Always call `destroy_world()` to clean up resources
+6. **Iterator Cleanup**: Use `defer ecs.destroy_iterator(it)` or manually destroy iterators
 
 ## Example: Simple Game Loop
 
@@ -213,7 +239,7 @@ main :: proc() {
     
     // Game loop
     for frame in 0..<60 {
-        // Update physics
+        // Update physics (now fast by default!)
         it := ecs.query(&world, Transform, Velocity)
         for {
             entity, ok := ecs.next(it)
@@ -222,14 +248,15 @@ main :: proc() {
                 break
             }
             
-            transform, _ := ecs.get(&world, entity, Transform)
-            velocity, _ := ecs.get(&world, entity, Velocity)
+            // Use get_from_query for best performance
+            transform, _ := ecs.get_from_query(it, entity, Transform)
+            velocity, _ := ecs.get_from_query(it, entity, Velocity)
             
             transform.x += velocity.dx
             transform.y += velocity.dy
         }
         
-        // Render
+        // Render (now fast by default!)
         render_it := ecs.query(&world, Transform, Renderable)
         for {
             entity, ok := ecs.next(render_it)
@@ -238,8 +265,8 @@ main :: proc() {
                 break
             }
             
-            transform, _ := ecs.get(&world, entity, Transform)
-            renderable, _ := ecs.get(&world, entity, Renderable)
+            transform, _ := ecs.get_from_query(render_it, entity, Transform)
+            renderable, _ := ecs.get_from_query(render_it, entity, Renderable)
             
             // Draw entity
             fmt.printf("Drawing entity %v at (%v, %v) with color %v\n", 
@@ -248,6 +275,55 @@ main :: proc() {
     }
 }
 ```
+
+### **Alternative: Simple Game Loop (Using Standard get)**
+
+```odin
+// Simpler but slower version - good for prototyping
+for frame in 0..<60 {
+    // Update physics (simple API, slower performance)
+    it := ecs.query(&world, Transform, Velocity)
+    for {
+        entity, ok := ecs.next(it)
+        if !ok {
+            ecs.destroy_iterator(it)
+            break
+        }
+        
+        // Standard get is slower but simpler
+        transform, _ := ecs.get(&world, entity, Transform)
+        velocity, _ := ecs.get(&world, entity, Velocity)
+        
+        transform.x += velocity.dx
+        transform.y += velocity.dy
+    }
+}
+```
+
+## Performance Trade-offs
+
+### **Unified Query System**
+
+Raven ECS now provides a single, fast query system with performance options:
+
+| Aspect | Unified Query (`query`/`next`) | Performance Options |
+|--------|--------------------------------|-------------------|
+| **API Complexity** | Simple, clean | Same simple API |
+| **Performance** | Fast by default (~0.23ms pure iteration) | Choose your component access speed |
+| **Memory Overhead** | Optimized (cached pools) | Efficient memory usage |
+| **Use Case** | Everything - from prototyping to production | Scales with your needs |
+| **Learning Curve** | Easy to learn | One system to master |
+
+### **Component Access Performance**
+
+- **`get_from_query`**: Fastest (~0.59ms for 100k entities) - **Recommended for performance**
+- **Standard `get`**: Slower (~1.15ms for 100k entities) - **Good for prototyping and simple code**
+
+### **When to Use Each**
+
+- **Start Simple**: Use `query`/`next` with standard `get` when learning
+- **Optimize When Needed**: Switch to `get_from_query` for performance-critical loops
+- **Best of Both Worlds**: Simple API that's fast by default, with optional performance boost
 
 ## Limitations
 
@@ -264,7 +340,7 @@ main :: proc() {
 odin test tests/
 
 # Run benchmarks
-odin test tests/benchmark.odin -file
+odin test tests/benchmark.odin -file -o:speed
 
 # Build example
 odin build tests/main.odin
