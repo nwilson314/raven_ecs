@@ -5,14 +5,6 @@ import "core:time"
 import "core:log"
 import ecs "../src"
 
-Position :: struct {
-	x, y: f32,
-}
-
-Velocity :: struct {
-	dx, dy: f32,
-}
-
 Player :: struct {
 	
 }
@@ -20,8 +12,8 @@ Player :: struct {
 @(test)
 test_100k_entities_update :: proc(t: ^testing.T) {
 	world: ecs.World
-	ecs.create_component_pool(&world, Position)
-	ecs.create_component_pool(&world, Velocity)
+	ecs.create_component_pool(&world, ecs.Position)
+	ecs.create_component_pool(&world, ecs.Velocity)
 	ecs.create_component_pool(&world, Player)
 
 	BENCH_N :: 100_000
@@ -29,8 +21,8 @@ test_100k_entities_update :: proc(t: ^testing.T) {
 	log.infof("Setting up %v entities...", BENCH_N)
 	for i in 0..<BENCH_N {
 		entity := ecs.make_entity(&world)
-		ecs.add(&world, entity, Position{f32(i), f32(i)})
-		ecs.add(&world, entity, Velocity{1, 1})
+		ecs.add(&world, entity, ecs.Position{f32(i), f32(i)})
+		ecs.add(&world, entity, ecs.Velocity{1, 1})
 	}
 
 	UPDATE_FRAMES :: 60
@@ -39,7 +31,9 @@ test_100k_entities_update :: proc(t: ^testing.T) {
 	start_time := time.tick_now()
 
 	for _ in 0..<UPDATE_FRAMES {
-		it := ecs.query(&world, Position, Velocity)
+		// Use unified query (now fast by default)
+		it := ecs.query(&world, ecs.Position, ecs.Velocity)
+		
 		for {
 			entity, ok := ecs.next(it)
 			if !ok {
@@ -47,8 +41,16 @@ test_100k_entities_update :: proc(t: ^testing.T) {
 				break
 			}
 
-			ecs.get(&world, entity, Position)
-			ecs.get(&world, entity, Velocity)
+			// Use the new helper function - no manual casting needed!
+			pos, pos_ok := ecs.get_from_query(it, entity, ecs.Position)
+			vel, vel_ok := ecs.get_from_query(it, entity, ecs.Velocity)
+			
+			// The components are already the right types
+			if pos_ok && vel_ok {
+				// This will compile and work correctly
+				_ = pos.x  // pos is already ^Position
+				_ = vel.dx // vel is already ^Velocity
+			}
 		}
 	}
 
@@ -69,8 +71,8 @@ test_100k_entities_update :: proc(t: ^testing.T) {
 @(test)
 test_10k_entities_add_remove :: proc(t: ^testing.T) {
 	world: ecs.World
-	ecs.create_component_pool(&world, Position)
-	ecs.create_component_pool(&world, Velocity)
+	ecs.create_component_pool(&world, ecs.Position)
+	ecs.create_component_pool(&world, ecs.Velocity)
 
 	BENCH_N :: 10_000
 
@@ -88,14 +90,14 @@ test_10k_entities_add_remove :: proc(t: ^testing.T) {
 
 	// Add components
 	for entity in entities {
-		ecs.add(&world, entity, Position{1, 1})
-		ecs.add(&world, entity, Velocity{1, 1})
+		ecs.add(&world, entity, ecs.Position{1, 1})
+		ecs.add(&world, entity, ecs.Velocity{1, 1})
 	}
 
 	// Remove components
 	for entity in entities {
-		ecs.remove(&world, entity, Position)
-		ecs.remove(&world, entity, Velocity)
+		ecs.remove(&world, entity, ecs.Position)
+		ecs.remove(&world, entity, ecs.Velocity)
 	}
 
 	end_time := time.tick_now()

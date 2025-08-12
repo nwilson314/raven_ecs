@@ -44,6 +44,7 @@ destroy_entity :: proc(world: ^World, entity: EntityID) {
 BaseComponentPool :: struct {
     owners: [dynamic]EntityID,
     sparse: [dynamic]i64,
+    component_type: typeid,  // Store the component type for identification
     destroyer: proc(cp: ^BaseComponentPool),
     remover:   proc(pool: ^BaseComponentPool, entity: EntityID),
 }
@@ -83,6 +84,7 @@ create_component_pool :: proc(world: ^World, $T: typeid) -> ^ComponentPool(T) {
     component_pool.base = BaseComponentPool{
         owners = {},
         sparse = sparse,
+        component_type = T,  // Set the component type
         destroyer = destroyer,
         remover = remover,
     }
@@ -118,20 +120,32 @@ has :: proc(world: ^World, entity: EntityID, $T: typeid) -> bool {
     return idx >= 0
 }
 
-get :: proc(world: ^World, entity: EntityID, $T: typeid) -> ^T {
+get :: #force_inline proc(world: ^World, entity: EntityID, $T: typeid) -> (component: ^T, ok: bool) {
     base_pool_ptr := world.pools[T]
     cp := cast(^ComponentPool(T))base_pool_ptr
     idx := cp.base.sparse[i64(entity)]
-    return &cp.dense[idx]
+    
+    // Minimal bounds check - faster than calling has()
+    if idx < 0 || idx >= i64(len(cp.dense)) {
+        return nil, false
+    }
+    
+    return &cp.dense[idx], true
 }
 
-remove :: proc(world: ^World, entity: EntityID, $T: typeid) {
+remove :: #force_inline proc(world: ^World, entity: EntityID, $T: typeid) {
     base_pool_ptr := world.pools[T]
     cp := cast(^ComponentPool(T))base_pool_ptr
     idx := cp.base.sparse[i64(entity)]
+    
+    // Minimal bounds check - faster than calling has()
+    if idx < 0 || idx >= i64(len(cp.dense)) {
+        return
+    }
+    
     last_idx := len(cp.dense) - 1
 
-        if idx != i64(last_idx) {
+    if idx != i64(last_idx) {
         // Move the last element into the place of the one being removed
         moved_entity := cp.base.owners[last_idx]
         cp.dense[idx] = cp.dense[last_idx]
@@ -171,13 +185,7 @@ base_remove :: proc(pool: ^BaseComponentPool, entity: EntityID) {
     pool.sparse[i64(entity)] = -1
 }
 
-destroy_component_pool :: proc(cp: ^ComponentPool($T)) {
-    delete(cp.dense)
-    delete(cp.base.owners)
-    delete(cp.base.sparse)
-}
-
-// --- Query System ---
+// --- Unified Query System ---
 
 QueryIterator :: struct {
     pools:             [dynamic]^BaseComponentPool,
@@ -185,15 +193,7 @@ QueryIterator :: struct {
     current_index:     int,
 }
 
-destroy_iterator :: proc(it: ^QueryIterator) {
-    if it == nil {
-        return
-    }
-
-    delete(it.pools)
-    free(it)
-}
-
+// Create a query iterator for entities with specific components
 query :: proc(world: ^World, components: ..typeid) -> ^QueryIterator {
     it := new(QueryIterator)
     it.current_index = -1
@@ -221,20 +221,7 @@ query :: proc(world: ^World, components: ..typeid) -> ^QueryIterator {
     return it
 }
 
-query_collect :: proc(world: ^World, components: ..typeid) -> [dynamic]EntityID {
-    it := query(world, ..components)
-    entities := make([dynamic]EntityID)
-    for {
-        entity, ok := next(it)
-        if !ok {
-            break
-        }
-        append(&entities, entity)
-    }
-    destroy_iterator(it)
-    return entities
-}
-
+// Iterate through entities in the query
 next :: proc(it: ^QueryIterator) -> (entity: EntityID, ok: bool) {
     if it.source_pool_index < 0 {
         return EntityID(~u64(0)), false
@@ -255,7 +242,10 @@ next :: proc(it: ^QueryIterator) -> (entity: EntityID, ok: bool) {
             if j == it.source_pool_index {
                 continue
             }
-            if !base_has(other_pool, entity_to_check) {
+            // Optimized: Since entity_to_check exists in source_pool, 
+            // we know it's within bounds, so we can skip bounds checking
+            idx := other_pool.sparse[i64(entity_to_check)]
+            if idx < 0 {
                 is_match = false
                 break
             }
@@ -265,4 +255,58 @@ next :: proc(it: ^QueryIterator) -> (entity: EntityID, ok: bool) {
             return entity_to_check, true
         }
     }
+}
+
+// Helper function to find which pool index a component type is in
+find_pool_index :: proc(it: ^QueryIterator, $T: typeid) -> int {
+    for i in 0..<len(it.pools) {
+        // Check if this pool matches the component type
+        if it.pools[i].component_type == T {
+            return i
+        }
+    }
+    return -1
+}
+
+// Get component directly from a query iterator (no map lookups - much faster!)
+get_from_query :: proc(it: ^QueryIterator, entity: EntityID, $T: typeid) -> (component: ^T, ok: bool) {
+    pool_index := find_pool_index(it, T)
+    if pool_index < 0 {
+        return nil, false
+    }
+    
+    // Cast the pool to the right type
+    pool := cast(^ComponentPool(T))it.pools[pool_index]
+    
+    // Get the component using fast access (no bounds checking needed since we're iterating)
+    idx := pool.base.sparse[i64(entity)]
+    if idx < 0 || idx >= i64(len(pool.dense)) {
+        return nil, false
+    }
+    
+    return &pool.dense[idx], true
+}
+
+// Clean up query iterator
+destroy_iterator :: proc(it: ^QueryIterator) {
+    if it == nil {
+        return
+    }
+    delete(it.pools)
+    free(it)
+}
+
+// Collect all entities with specific components
+query_collect :: proc(world: ^World, components: ..typeid) -> [dynamic]EntityID {
+    it := query(world, ..components)
+    entities := make([dynamic]EntityID)
+    for {
+        entity, ok := next(it)
+        if !ok {
+            break
+        }
+        append(&entities, entity)
+    }
+    destroy_iterator(it)
+    return entities
 }

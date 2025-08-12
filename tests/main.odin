@@ -5,7 +5,7 @@ import "core:strings"
 import rl "vendor:raylib"
 import ecs "../src/"
 
-BENCH_N :: 20_000
+BENCH_N :: 10_000
 
 Transform :: struct {
     x, y: f32
@@ -38,7 +38,10 @@ main :: proc() {
         }
         if rl.IsMouseButtonPressed(.LEFT) {
             for i in 0 ..< len(color_pool.dense) {
-                color := ecs.get(&world, ecs.EntityID(i), Color)
+                color, ok := ecs.get(&world, ecs.EntityID(i), Color)
+                if !ok {
+                    continue
+                }
                 color.r = u8(rl.GetRandomValue(0, 255))
                 color.g = u8(rl.GetRandomValue(0, 255))
                 color.b = u8(rl.GetRandomValue(0, 255))
@@ -56,9 +59,13 @@ main :: proc() {
                 break
             }
 
-            transform := ecs.get(&world, entity, Transform)
-            color := ecs.get(&world, entity, Color)
-            rl.DrawCircle(i32(transform.x), i32(transform.y), 10, rl.Color{color.r, color.g, color.b, color.a})
+            transform, ok_transform := ecs.get_from_query(it, entity, Transform)
+            color, ok_color := ecs.get_from_query(it, entity, Color)
+            // transform, ok_transform := ecs.get(&world, entity, Transform)
+            // color, ok_color := ecs.get(&world, entity, Color)
+            if ok_transform && ok_color {
+                rl.DrawCircle(i32(transform.x), i32(transform.y), 10, rl.Color{color.r, color.g, color.b, color.a})
+            }
         }
         fps := rl.GetFPS()
         fps_text := strings.clone_to_cstring(fmt.tprintf("FPS: %d", fps))
