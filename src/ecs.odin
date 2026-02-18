@@ -124,7 +124,10 @@ register_component_pool :: proc(world: ^World, cp: ^ComponentPool($T)) {
 }
 
 add :: proc(world: ^World, entity: EntityID, component: $T) {
-    base_pool_ptr := world.pools[T]
+    base_pool_ptr, pool_ok := world.pools[T]
+    if !pool_ok {
+        return
+    }
     cp := cast(^ComponentPool(T))base_pool_ptr
     eidx := i64(entity_index(entity))
 
@@ -155,7 +158,10 @@ has :: proc(world: ^World, entity: EntityID, $T: typeid) -> bool {
 }
 
 get :: #force_inline proc(world: ^World, entity: EntityID, $T: typeid) -> (component: ^T, ok: bool) {
-    base_pool_ptr := world.pools[T]
+    base_pool_ptr, pool_ok := world.pools[T]
+    if !pool_ok {
+        return nil, false
+    }
     cp := cast(^ComponentPool(T))base_pool_ptr
     idx := cp.base.sparse[i64(entity_index(entity))]
     
@@ -168,7 +174,10 @@ get :: #force_inline proc(world: ^World, entity: EntityID, $T: typeid) -> (compo
 }
 
 remove :: #force_inline proc(world: ^World, entity: EntityID, $T: typeid) {
-    base_pool_ptr := world.pools[T]
+    base_pool_ptr, pool_ok := world.pools[T]
+    if !pool_ok {
+        return
+    }
     cp := cast(^ComponentPool(T))base_pool_ptr
     eidx := i64(entity_index(entity))
     idx := cp.base.sparse[eidx]

@@ -198,3 +198,21 @@ test_query_with_helper_functions :: proc(t: ^testing.T) {
 
       ecs.destroy_world(&world)
   }
+
+  @(test)
+  test_unregistered_component_no_crash :: proc(t: ^testing.T) {
+      world: ecs.World
+      entity := ecs.make_entity(&world)
+
+      // None of these should crash — Position pool was never created
+      testing.expect(t, !ecs.has(&world, entity, ecs.Position), "has should return false")
+
+      pos, ok := ecs.get(&world, entity, ecs.Position)
+      testing.expect(t, !ok, "get should return false")
+      testing.expect(t, pos == nil, "get should return nil")
+
+      ecs.remove(&world, entity, ecs.Position)  // should be a no-op
+      ecs.add(&world, entity, ecs.Position{1, 2})  // should be a no-op
+
+      ecs.destroy_world(&world)
+  }
