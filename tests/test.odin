@@ -179,40 +179,55 @@ test_query_with_helper_functions :: proc(t: ^testing.T) {
 
 
 @(test)
-  test_add_duplicate_overwrites :: proc(t: ^testing.T) {
-      world: ecs.World
-      ecs.create_component_pool(&world, ecs.Position)
+test_add_duplicate_overwrites :: proc(t: ^testing.T) {
+    world: ecs.World
+    ecs.create_component_pool(&world, ecs.Position)
 
-      entity := ecs.make_entity(&world)
-      ecs.add(&world, entity, ecs.Position{10, 20})
-      ecs.add(&world, entity, ecs.Position{30, 40})
+    entity := ecs.make_entity(&world)
+    ecs.add(&world, entity, ecs.Position{10, 20})
+    ecs.add(&world, entity, ecs.Position{30, 40})
 
-      // Should have overwritten, not duplicated
-      pos, ok := ecs.get(&world, entity, ecs.Position)
-      testing.expect(t, ok, "Should still have Position")
-      testing.expect(t, pos.x == 30 && pos.y == 40, "Position should be overwritten to new value")   
+    // Should have overwritten, not duplicated
+    pos, ok := ecs.get(&world, entity, ecs.Position)
+    testing.expect(t, ok, "Should still have Position")
+    testing.expect(t, pos.x == 30 && pos.y == 40, "Position should be overwritten to new value")   
 
-      // Dense array should have exactly 1 entry, not 2
-      base_pool := world.pools[ecs.Position]
-      testing.expect_value(t, len(base_pool.owners), 1)
+    // Dense array should have exactly 1 entry, not 2
+    base_pool := world.pools[ecs.Position]
+    testing.expect_value(t, len(base_pool.owners), 1)
 
-      ecs.destroy_world(&world)
-  }
+    ecs.destroy_world(&world)
+}
 
-  @(test)
-  test_unregistered_component_no_crash :: proc(t: ^testing.T) {
-      world: ecs.World
-      entity := ecs.make_entity(&world)
+@(test)
+test_unregistered_component_no_crash :: proc(t: ^testing.T) {
+    world: ecs.World
+    entity := ecs.make_entity(&world)
 
-      // None of these should crash — Position pool was never created
-      testing.expect(t, !ecs.has(&world, entity, ecs.Position), "has should return false")
+    // None of these should crash — Position pool was never created
+    testing.expect(t, !ecs.has(&world, entity, ecs.Position), "has should return false")
 
-      pos, ok := ecs.get(&world, entity, ecs.Position)
-      testing.expect(t, !ok, "get should return false")
-      testing.expect(t, pos == nil, "get should return nil")
+    pos, ok := ecs.get(&world, entity, ecs.Position)
+    testing.expect(t, !ok, "get should return false")
+    testing.expect(t, pos == nil, "get should return nil")
 
-      ecs.remove(&world, entity, ecs.Position)  // should be a no-op
-      ecs.add(&world, entity, ecs.Position{1, 2})  // should be a no-op
+    ecs.remove(&world, entity, ecs.Position)  // should be a no-op
+    ecs.add(&world, entity, ecs.Position{1, 2})  // should be a no-op
 
-      ecs.destroy_world(&world)
-  }
+    ecs.destroy_world(&world)
+}
+
+@(test)
+test_add_beyond_max_entities :: proc(t: ^testing.T) {
+    world: ecs.World
+    ecs.create_component_pool(&world, ecs.Position)
+
+    // Manually craft an entity with an out-of-range index
+    bad_entity := ecs.make_entity_id(ecs.MAX_ENTITIES + 1, 0)
+    ecs.add(&world, bad_entity, ecs.Position{99, 99})
+
+    // Should have been rejected
+    testing.expect(t, !ecs.has(&world, bad_entity, ecs.Position), "Should not have component beyond MAX_ENTITIES")
+
+    ecs.destroy_world(&world)
+}

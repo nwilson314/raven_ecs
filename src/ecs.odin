@@ -40,6 +40,10 @@ make_entity :: proc(world: ^World) -> EntityID {
         return id // generation is already incremented during destroy
     }
 
+    if world.next >= MAX_ENTITIES {
+        panic("Exceeded MAX_ENTITIES limit")
+    }
+
     index := world.next
     world.next += 1
     append(&world.generations, 0)
@@ -130,6 +134,11 @@ add :: proc(world: ^World, entity: EntityID, component: $T) {
     }
     cp := cast(^ComponentPool(T))base_pool_ptr
     eidx := i64(entity_index(entity))
+
+    if eidx >= i64(len(cp.base.sparse)) {
+        // Entity index is out of bounds, just return here silently
+        return
+    }
 
     // If entity already has this component, overwrite it
     existing := cp.base.sparse[eidx]
