@@ -9,22 +9,26 @@ test_entity_lifecycle :: proc(t: ^testing.T) {
 
     // 1. Test making a new entity
     entity1 := ecs.make_entity(&world)
-    testing.expect(t, entity1 == 0, "First entity should have ID 0")
+    testing.expect(t, ecs.entity_index(entity1) == 0, "First entity should have index 0")
+    testing.expect(t, ecs.entity_generation(entity1) == 0, "First entity should have generation 0")
     testing.expect(t, world.next == 1, "World.next should be incremented to 1")
 
     // 2. Test making another entity
     entity2 := ecs.make_entity(&world)
-    testing.expect(t, entity2 == 1, "Second entity should have ID 1")
+    testing.expect(t, ecs.entity_index(entity2) == 1, "Second entity should have index 1")
     testing.expect(t, world.next == 2, "World.next should be incremented to 2")
 
     // 3. Destroy the first entity
     ecs.destroy_entity(&world, entity1)
     testing.expect(t, len(world.free_list) == 1, "Free list should contain 1 element")
-    testing.expect(t, world.free_list[0] == u64(entity1), "Free list should contain the destroyed entity ID")
+    testing.expect(t, ecs.entity_index(world.free_list[0]) == ecs.entity_index(entity1), "Free list should contain the destroyed entity index")
+    testing.expect(t, ecs.entity_generation(world.free_list[0]) == 1, "Free list entry should have bumped generation")
 
-    // 4. Create a new entity, it should recycle the old ID
+    // 4. Create a new entity, it should recycle the index but with a new generation
     entity3 := ecs.make_entity(&world)
-    testing.expect(t, entity3 == entity1, "New entity should recycle the ID from the free list")
+    testing.expect(t, ecs.entity_index(entity3) == ecs.entity_index(entity1), "New entity should recycle the index")
+    testing.expect(t, ecs.entity_generation(entity3) == 1, "Recycled entity should have generation 1")
+    testing.expect(t, entity3 != entity1, "Recycled entity should NOT equal the old entity (different generation)")
     testing.expect(t, len(world.free_list) == 0, "Free list should be empty after recycling")
     testing.expect(t, world.next == 2, "World.next should not be incremented when recycling")
 
@@ -114,15 +118,19 @@ test_destroy_entity_removes_components :: proc(t: ^testing.T) {
     e1 := ecs.make_entity(&world)
     ecs.add(&world, e1, ecs.Position{1, 1})
     testing.expect(t, ecs.has(&world, e1, ecs.Position), "Entity should have component before being destroyed")
-    
+
     ecs.destroy_entity(&world, e1)
 
-    // 2. Create a new entity, which should reuse the ID of e1
+    // 2. Create a new entity, which should reuse the index of e1
     e2 := ecs.make_entity(&world)
 
-    // 3. Assert that the new entity does not have the old one's component
-    testing.expect_value(t, e1, e2)
+    // 3. The recycled entity has the same index but different generation
+    testing.expect(t, ecs.entity_index(e1) == ecs.entity_index(e2), "New entity should reuse the index")
+    testing.expect(t, e1 != e2, "New entity should not equal old entity (different generation)")
     testing.expect(t, !ecs.has(&world, e2, ecs.Position), "New entity should not have component from destroyed entity")
+
+    // 4. Verify stale reference doesn't work
+    testing.expect(t, !ecs.has(&world, e1, ecs.Position), "Stale reference should not have component")
 
     // Clean up
     ecs.destroy_world(&world)
@@ -145,26 +153,26 @@ test_query_with_helper_functions :: proc(t: ^testing.T) {
 
     // Test the new helper functions
     it := ecs.query(&world, ecs.Position, ecs.Velocity)
-    
+
     // Get first entity
     entity, ok := ecs.next(it)
     testing.expect(t, ok, "Should get first entity")
-    
+
     // Use helper functions to get components
     pos, pos_ok := ecs.get_from_query(it, entity, ecs.Position)
     vel, vel_ok := ecs.get_from_query(it, entity, ecs.Velocity)
-    
+
     testing.expect(t, pos_ok, "Should get Position component")
     testing.expect(t, vel_ok, "Should get Velocity component")
     testing.expect(t, pos.x == 10 && pos.y == 20, "Position data should be correct")
     testing.expect(t, vel.dx == 5 && vel.dy == 3, "Velocity data should be correct")
-    
+
     // Test that components are the right types (this will compile if types are correct)
     pos.x += vel.dx  // This should work if pos is ^Position and vel is ^Velocity
     pos.y += vel.dy
-    
+
     testing.expect(t, pos.x == 15 && pos.y == 23, "Component modification should work")
-    
+
     ecs.destroy_iterator(it)
     ecs.destroy_world(&world)
 }

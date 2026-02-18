@@ -5,7 +5,7 @@ import "core:strings"
 import rl "vendor:raylib"
 import ecs "../src/"
 
-BENCH_N :: 10_000
+BENCH_N :: 15_000
 
 Transform :: struct {
     x, y: f32

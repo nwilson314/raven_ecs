@@ -5,9 +5,22 @@ EntityID :: distinct u64
 
 MAX_ENTITIES :: 100_000
 
+entity_index :: #force_inline proc(id: EntityID) -> u32 {
+    return u32(u64(id) & 0xFFFFFFFF)
+}
+
+entity_generation :: #force_inline proc(id: EntityID) -> u32 {
+    return u32(u64(id) >> 32)
+}
+
+make_entity_id :: #force_inline proc(index: u32, gen: u32) -> EntityID {
+    return EntityID(u64(gen) << 32 | u64(index))
+} 
+
 World :: struct {
-    free_list: [dynamic]u64,
-    next: u64,
+    free_list: [dynamic]EntityID,
+    next: u32, // only tracks index
+    generations: [dynamic]u32,
     pools: map[typeid]^BaseComponentPool,
 }
 
@@ -17,28 +30,41 @@ destroy_world :: proc(world: ^World) {
     }
     delete(world.pools)
     delete(world.free_list)
+    delete(world.generations)
 }
 
 make_entity :: proc(world: ^World) -> EntityID {
     if len(world.free_list) > 0 {
         id := world.free_list[len(world.free_list) - 1]
         resize(&world.free_list, len(world.free_list) - 1)
-        return EntityID(id)
+        return id // generation is already incremented during destroy
     }
+
+    index := world.next
     world.next += 1
-    return EntityID(world.next-1)
+    append(&world.generations, 0)
+    return make_entity_id(index, 0)
 }
 
 destroy_entity :: proc(world: ^World, entity: EntityID) {
+    index := entity_index(entity)
+    gen := entity_generation(entity)
+
+    // Stale reference - already destroyed
+    if world.generations[index] != gen {
+        return
+    }
+
     for _, pool in world.pools {
         if base_has(pool, entity) {
-            // shrink dense array
             pool.remover(pool, entity)
-            // shrink owners and sparse array
             base_remove(pool, entity)
         }
     }
-    append(&world.free_list, u64(entity))
+
+    // Bump generation so all existing references to this entity become stale
+    world.generations[index] += 1
+    append(&world.free_list, make_entity_id(index, world.generations[index]))
 }
 
 BaseComponentPool :: struct {
@@ -68,12 +94,11 @@ create_component_pool :: proc(world: ^World, $T: typeid) -> ^ComponentPool(T) {
         free(pool)
     }
     remover := proc(pool: ^BaseComponentPool, entity: EntityID) {
-        // shrink dense array
         cp := cast(^ComponentPool(T))pool
-        
-        idx := cp.base.sparse[i64(entity)]
+  
+        idx := cp.base.sparse[i64(entity_index(entity))]
         last_idx := len(cp.dense) - 1
-
+  
         if idx != i64(last_idx) {
             cp.dense[idx] = cp.dense[last_idx]
         }
@@ -104,7 +129,7 @@ add :: proc(world: ^World, entity: EntityID, component: $T) {
     idx := len(cp.dense)
     append(&cp.dense, component)
     append(&cp.base.owners, entity)
-    cp.base.sparse[i64(entity)] = i64(idx)
+    cp.base.sparse[i64(entity_index(entity))] = i64(idx)
 }
 
 has :: proc(world: ^World, entity: EntityID, $T: typeid) -> bool {
@@ -113,17 +138,17 @@ has :: proc(world: ^World, entity: EntityID, $T: typeid) -> bool {
         return false
     }
     cp := cast(^ComponentPool(T))base_pool_ptr
-    idx: i64 = -1
-    if i64(entity) < i64(len(cp.base.sparse)) {
-        idx = cp.base.sparse[i64(entity)]
+    index := i64(entity_index(entity))
+    if index >= i64(len(cp.base.sparse)) {
+        return false
     }
-    return idx >= 0
+    return cp.base.sparse[index] >= 0
 }
 
 get :: #force_inline proc(world: ^World, entity: EntityID, $T: typeid) -> (component: ^T, ok: bool) {
     base_pool_ptr := world.pools[T]
     cp := cast(^ComponentPool(T))base_pool_ptr
-    idx := cp.base.sparse[i64(entity)]
+    idx := cp.base.sparse[i64(entity_index(entity))]
     
     // Minimal bounds check - faster than calling has()
     if idx < 0 || idx >= i64(len(cp.dense)) {
@@ -136,53 +161,48 @@ get :: #force_inline proc(world: ^World, entity: EntityID, $T: typeid) -> (compo
 remove :: #force_inline proc(world: ^World, entity: EntityID, $T: typeid) {
     base_pool_ptr := world.pools[T]
     cp := cast(^ComponentPool(T))base_pool_ptr
-    idx := cp.base.sparse[i64(entity)]
-    
-    // Minimal bounds check - faster than calling has()
+    eidx := i64(entity_index(entity))
+    idx := cp.base.sparse[eidx]
+
     if idx < 0 || idx >= i64(len(cp.dense)) {
         return
     }
-    
+
     last_idx := len(cp.dense) - 1
 
     if idx != i64(last_idx) {
-        // Move the last element into the place of the one being removed
         moved_entity := cp.base.owners[last_idx]
         cp.dense[idx] = cp.dense[last_idx]
         cp.base.owners[idx] = moved_entity
-        // Update the sparse array for the moved entity
-        cp.base.sparse[i64(moved_entity)] = idx
+        cp.base.sparse[i64(entity_index(moved_entity))] = idx
     }
 
-    // Shrink the arrays
     resize(&cp.dense, last_idx)
     resize(&cp.base.owners, last_idx)
-    cp.base.sparse[i64(entity)] = -1
+    cp.base.sparse[eidx] = -1
 }
 
 base_has :: #force_inline proc(pool: ^BaseComponentPool, entity: EntityID) -> bool {
-    idx: i64 = -1
-    if i64(entity) < i64(len(pool.sparse)) {
-        idx = pool.sparse[i64(entity)]
+    index := i64(entity_index(entity))
+    if index >= i64(len(pool.sparse)) {
+        return false
     }
-    return idx >= 0
+    return pool.sparse[index] >= 0
 }
 
 base_remove :: proc(pool: ^BaseComponentPool, entity: EntityID) {
-    idx := pool.sparse[i64(entity)]
+    eidx := i64(entity_index(entity))
+    idx := pool.sparse[eidx]
     last_idx := len(pool.owners) - 1
 
     if idx != i64(last_idx) {
-        // Move the last element into the place of the one being removed
         moved_entity := pool.owners[last_idx]
         pool.owners[idx] = moved_entity
-        // Update the sparse array for the moved entity
-        pool.sparse[i64(moved_entity)] = idx
+        pool.sparse[i64(entity_index(moved_entity))] = idx
     }
 
-    // Shrink the arrays
     resize(&pool.owners, last_idx)
-    pool.sparse[i64(entity)] = -1
+    pool.sparse[eidx] = -1
 }
 
 // --- Unified Query System ---
@@ -242,9 +262,7 @@ next :: proc(it: ^QueryIterator) -> (entity: EntityID, ok: bool) {
             if j == it.source_pool_index {
                 continue
             }
-            // Optimized: Since entity_to_check exists in source_pool, 
-            // we know it's within bounds, so we can skip bounds checking
-            idx := other_pool.sparse[i64(entity_to_check)]
+            idx := other_pool.sparse[i64(entity_index(entity_to_check))]
             if idx < 0 {
                 is_match = false
                 break
@@ -268,7 +286,7 @@ find_pool_index :: proc(it: ^QueryIterator, $T: typeid) -> int {
     return -1
 }
 
-// Get component directly from a query iterator (no map lookups - much faster!)
+// Get component directly from a query iterator
 get_from_query :: proc(it: ^QueryIterator, entity: EntityID, $T: typeid) -> (component: ^T, ok: bool) {
     pool_index := find_pool_index(it, T)
     if pool_index < 0 {
@@ -279,7 +297,7 @@ get_from_query :: proc(it: ^QueryIterator, entity: EntityID, $T: typeid) -> (com
     pool := cast(^ComponentPool(T))it.pools[pool_index]
     
     // Get the component using fast access (no bounds checking needed since we're iterating)
-    idx := pool.base.sparse[i64(entity)]
+    idx := pool.base.sparse[i64(entity_index(entity))]
     if idx < 0 || idx >= i64(len(pool.dense)) {
         return nil, false
     }
@@ -309,4 +327,13 @@ query_collect :: proc(world: ^World, components: ..typeid) -> [dynamic]EntityID 
     }
     destroy_iterator(it)
     return entities
+}
+
+// Check if an entity is still valid (not destroyed)
+is_alive :: proc(world: ^World, entity: EntityID) -> bool {
+    index := entity_index(entity)
+    if u64(index) >= u64(len(world.generations)) {
+        return false
+    }
+    return world.generations[index] == entity_generation(entity)
 }
