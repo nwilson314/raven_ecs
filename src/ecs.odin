@@ -54,7 +54,6 @@ destroy_entity :: proc(world: ^World, entity: EntityID) {
     index := entity_index(entity)
     gen := entity_generation(entity)
 
-    // Stale reference - already destroyed
     if world.generations[index] != gen {
         return
     }
@@ -62,11 +61,9 @@ destroy_entity :: proc(world: ^World, entity: EntityID) {
     for _, pool in world.pools {
         if base_has(pool, entity) {
             pool.remover(pool, entity)
-            base_remove(pool, entity)
         }
     }
 
-    // Bump generation so all existing references to this entity become stale
     world.generations[index] += 1
     append(&world.free_list, make_entity_id(index, world.generations[index]))
 }
@@ -99,14 +96,20 @@ create_component_pool :: proc(world: ^World, $T: typeid) -> ^ComponentPool(T) {
     }
     remover := proc(pool: ^BaseComponentPool, entity: EntityID) {
         cp := cast(^ComponentPool(T))pool
-  
-        idx := cp.base.sparse[i64(entity_index(entity))]
+        eidx := i64(entity_index(entity))
+        idx := cp.base.sparse[eidx]
         last_idx := len(cp.dense) - 1
   
         if idx != i64(last_idx) {
+            moved_entity := cp.base.owners[last_idx]
             cp.dense[idx] = cp.dense[last_idx]
+            cp.base.owners[idx] = moved_entity
+            cp.base.sparse[i64(entity_index(moved_entity))] = idx
         }
+  
         resize(&cp.dense, last_idx)
+        resize(&cp.base.owners, last_idx)
+        cp.base.sparse[eidx] = -1
     }
 
     component_pool := new(ComponentPool(T))
@@ -215,21 +218,6 @@ base_has :: #force_inline proc(pool: ^BaseComponentPool, entity: EntityID) -> bo
         return false
     }
     return pool.sparse[index] >= 0
-}
-
-base_remove :: proc(pool: ^BaseComponentPool, entity: EntityID) {
-    eidx := i64(entity_index(entity))
-    idx := pool.sparse[eidx]
-    last_idx := len(pool.owners) - 1
-
-    if idx != i64(last_idx) {
-        moved_entity := pool.owners[last_idx]
-        pool.owners[idx] = moved_entity
-        pool.sparse[i64(entity_index(moved_entity))] = idx
-    }
-
-    resize(&pool.owners, last_idx)
-    pool.sparse[eidx] = -1
 }
 
 // --- Unified Query System ---

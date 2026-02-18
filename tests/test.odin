@@ -231,3 +231,33 @@ test_add_beyond_max_entities :: proc(t: ^testing.T) {
 
     ecs.destroy_world(&world)
 }
+
+@(test)
+test_destroy_entity_swap_and_pop_consistency :: proc(t: ^testing.T) {
+    world: ecs.World
+    ecs.create_component_pool(&world, ecs.Position)
+
+    e1 := ecs.make_entity(&world)
+    e2 := ecs.make_entity(&world)
+    e3 := ecs.make_entity(&world)
+    ecs.add(&world, e1, ecs.Position{10, 10})
+    ecs.add(&world, e2, ecs.Position{20, 20})
+    ecs.add(&world, e3, ecs.Position{30, 30})
+
+    // Destroy the middle entity — triggers remover + base_remove path
+    ecs.destroy_entity(&world, e2)
+
+    // e1 and e3 should still have correct data
+    pos1, ok1 := ecs.get(&world, e1, ecs.Position)
+    testing.expect(t, ok1, "e1 should still have Position")
+    testing.expect(t, pos1.x == 10 && pos1.y == 10, "e1 Position should be unchanged")
+
+    pos3, ok3 := ecs.get(&world, e3, ecs.Position)
+    testing.expect(t, ok3, "e3 should still have Position")
+    testing.expect(t, pos3.x == 30 && pos3.y == 30, "e3 Position should be unchanged")
+
+    // Stale reference should fail
+    testing.expect(t, !ecs.has(&world, e2, ecs.Position), "Destroyed entity should not have Position")
+
+    ecs.destroy_world(&world)
+}
