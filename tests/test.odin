@@ -176,3 +176,25 @@ test_query_with_helper_functions :: proc(t: ^testing.T) {
     ecs.destroy_iterator(it)
     ecs.destroy_world(&world)
 }
+
+
+@(test)
+  test_add_duplicate_overwrites :: proc(t: ^testing.T) {
+      world: ecs.World
+      ecs.create_component_pool(&world, ecs.Position)
+
+      entity := ecs.make_entity(&world)
+      ecs.add(&world, entity, ecs.Position{10, 20})
+      ecs.add(&world, entity, ecs.Position{30, 40})
+
+      // Should have overwritten, not duplicated
+      pos, ok := ecs.get(&world, entity, ecs.Position)
+      testing.expect(t, ok, "Should still have Position")
+      testing.expect(t, pos.x == 30 && pos.y == 40, "Position should be overwritten to new value")   
+
+      // Dense array should have exactly 1 entry, not 2
+      base_pool := world.pools[ecs.Position]
+      testing.expect_value(t, len(base_pool.owners), 1)
+
+      ecs.destroy_world(&world)
+  }

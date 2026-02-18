@@ -126,10 +126,19 @@ register_component_pool :: proc(world: ^World, cp: ^ComponentPool($T)) {
 add :: proc(world: ^World, entity: EntityID, component: $T) {
     base_pool_ptr := world.pools[T]
     cp := cast(^ComponentPool(T))base_pool_ptr
+    eidx := i64(entity_index(entity))
+
+    // If entity already has this component, overwrite it
+    existing := cp.base.sparse[eidx]
+    if existing >= 0 && existing < i64(len(cp.dense)) {
+        cp.dense[existing] = component
+        return
+    }
+    
     idx := len(cp.dense)
     append(&cp.dense, component)
     append(&cp.base.owners, entity)
-    cp.base.sparse[i64(entity_index(entity))] = i64(idx)
+    cp.base.sparse[eidx] = i64(idx)
 }
 
 has :: proc(world: ^World, entity: EntityID, $T: typeid) -> bool {
